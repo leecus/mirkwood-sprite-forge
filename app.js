@@ -25,6 +25,13 @@ const els = {
   copyCssBtn: $("#copyCssBtn"),
   downloadJsonBtn: $("#downloadJsonBtn"),
   downloadFrameBtn: $("#downloadFrameBtn"),
+  gifPreviewModal: $("#gifPreviewModal"),
+  gifPreviewImage: $("#gifPreviewImage"),
+  gifPreviewMeta: $("#gifPreviewMeta"),
+  gifFileName: $("#gifFileName"),
+  downloadGifBtn: $("#downloadGifBtn"),
+  regenerateGifBtn: $("#regenerateGifBtn"),
+  closeGifPreviewBtn: $("#closeGifPreviewBtn"),
   gridModeBtn: $("#gridModeBtn"),
   freeModeBtn: $("#freeModeBtn"),
   detectSpritesBtn: $("#detectSpritesBtn"),
@@ -32,6 +39,10 @@ const els = {
   splitHorizontalBtn: $("#splitHorizontalBtn"),
   deleteFrameBtn: $("#deleteFrameBtn"),
   clearFramesBtn: $("#clearFramesBtn"),
+  moveFrameFirstBtn: $("#moveFrameFirstBtn"),
+  moveFramePrevBtn: $("#moveFramePrevBtn"),
+  moveFrameNextBtn: $("#moveFrameNextBtn"),
+  moveFrameLastBtn: $("#moveFrameLastBtn"),
   sampleMatteBtn: $("#sampleMatteBtn"),
   downloadCutoutBtn: $("#downloadCutoutBtn"),
   matteStatus: $("#matteStatus"),
@@ -111,6 +122,8 @@ const state = {
   dragStart: null,
   dragCurrent: null,
   didDrag: false,
+  gifPreviewBlob: null,
+  gifPreviewUrl: "",
 };
 
 function clamp(value, min, max) {
@@ -129,6 +142,16 @@ function cleanName(fileName) {
 
 function cssUrl(fileName) {
   return fileName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function gifFileName(frames) {
+  return `${state.imageName}_${frames.length}f_${state.fps}fps.gif`;
+}
+
+function safeDownloadName(value, fallback, extension) {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ");
+  const name = cleaned || fallback;
+  return name.toLowerCase().endsWith(extension) ? name : `${name}${extension}`;
 }
 
 function toast(message) {
@@ -214,9 +237,14 @@ function syncControls() {
   $("#gridControls").classList.toggle("grid-disabled", state.sliceMode !== "grid");
   const selectedFrame = currentFrame();
   const canEditFreeFrame = Boolean(state.image && state.sliceMode === "free" && selectedFrame);
+  const canReorderFreeFrame = canEditFreeFrame && state.freeFrames.length > 1;
   els.splitVerticalBtn.disabled = !canEditFreeFrame || selectedFrame.width < 8;
   els.splitHorizontalBtn.disabled = !canEditFreeFrame || selectedFrame.height < 8;
   els.deleteFrameBtn.disabled = !canEditFreeFrame;
+  els.moveFrameFirstBtn.disabled = !canReorderFreeFrame || selectedFrame.index === 0;
+  els.moveFramePrevBtn.disabled = !canReorderFreeFrame || selectedFrame.index === 0;
+  els.moveFrameNextBtn.disabled = !canReorderFreeFrame || selectedFrame.index >= state.freeFrames.length - 1;
+  els.moveFrameLastBtn.disabled = !canReorderFreeFrame || selectedFrame.index >= state.freeFrames.length - 1;
   els.clearFramesBtn.disabled = !state.image || state.sliceMode !== "free" || getAllFrames().length === 0;
   els.matteStatus.textContent = state.removeBackground ? "开启" : "关闭";
   els.sampleMatteBtn.textContent = state.sampleMatte ? "点击背景" : "取背景点";
@@ -225,6 +253,8 @@ function syncControls() {
   els.sensitivityValue.textContent = state.detectSensitivity;
   els.matteThresholdValue.textContent = state.matteThreshold;
   els.matteFeatherValue.textContent = state.matteFeather;
+  els.downloadGifBtn.disabled = !state.gifPreviewBlob;
+  els.regenerateGifBtn.disabled = !state.image;
 }
 
 function getMaxColumns() {
@@ -743,6 +773,7 @@ function sampleMatteColor(point) {
   };
   state.sampleMatte = false;
   state.ignoreNextClick = true;
+  clearGifPreview(false);
   render();
   toast(`背景色：rgb(${state.matteSample.r}, ${state.matteSample.g}, ${state.matteSample.b})`);
 }
@@ -930,6 +961,7 @@ function detectFreeFrames() {
 }
 
 function setSliceMode(mode) {
+  clearGifPreview(false);
   state.sliceMode = mode;
   state.playhead = 0;
   resetRange();
@@ -938,6 +970,7 @@ function setSliceMode(mode) {
 function applyDetectedFrames() {
   if (!state.image) return;
   readControls();
+  clearGifPreview(false);
   const frames = detectFreeFrames();
   state.sliceMode = "free";
   state.freeFrames = frames;
@@ -950,6 +983,7 @@ function applyDetectedFrames() {
 
 function applyGridGuess() {
   if (!state.image) return;
+  clearGifPreview(false);
   const guess = guessGrid(state.image.width, state.image.height);
   state.sliceMode = "grid";
   state.frameWidth = Math.max(1, guess.frameWidth);
@@ -967,6 +1001,7 @@ function applyGridGuess() {
 }
 
 function resetRange() {
+  clearGifPreview(false);
   const allFrames = getAllFrames();
   state.startFrame = 0;
   state.frameCount = Math.max(1, allFrames.length);
@@ -995,6 +1030,7 @@ function loadFile(file) {
     state.sampleMatte = false;
     state.playing = false;
     state.lastTick = 0;
+    clearGifPreview(false);
     els.fileLabel.textContent = file.name;
     els.imageMeta.textContent = `${image.width} x ${image.height}px`;
     applyGridGuess();
@@ -1250,15 +1286,51 @@ function encodeGif(frames, cell, delayCs) {
   return new Blob([new Uint8Array(bytes)], { type: "image/gif" });
 }
 
+function clearGifPreview(showMessage = false) {
+  if (state.gifPreviewUrl) {
+    URL.revokeObjectURL(state.gifPreviewUrl);
+  }
+  state.gifPreviewBlob = null;
+  state.gifPreviewUrl = "";
+  els.gifPreviewImage.removeAttribute("src");
+  els.gifPreviewModal.hidden = true;
+  els.gifPreviewMeta.textContent = "等待生成 GIF 预览";
+  els.downloadGifBtn.disabled = true;
+  if (showMessage) toast("GIF 预览已清除");
+}
+
+function closeGifPreview() {
+  els.gifPreviewModal.hidden = true;
+}
+
 function exportGif() {
+  readControls();
   const frames = getPlaybackFrames();
   if (!state.image || !frames.length) return;
 
+  clearGifPreview(false);
   const cell = getCellSize(frames);
   const delayCs = clamp(Math.round(100 / state.fps), 2, 100);
   const blob = encodeGif(frames, cell, delayCs);
-  downloadBlob(blob, `${state.imageName}_${frames.length}f_${state.fps}fps.gif`);
-  toast(`已导出 ${frames.length} 帧 GIF`);
+  const url = URL.createObjectURL(blob);
+  state.gifPreviewBlob = blob;
+  state.gifPreviewUrl = url;
+  els.gifPreviewImage.src = url;
+  els.gifFileName.value = gifFileName(frames);
+  els.gifPreviewMeta.textContent = `${frames.length} 帧 · ${cell.width} x ${cell.height}px · ${state.fps} FPS`;
+  els.gifPreviewModal.hidden = false;
+  els.downloadGifBtn.disabled = false;
+  els.gifFileName.focus();
+  els.gifFileName.select();
+  toast("GIF 预览已生成");
+}
+
+function downloadGifPreview() {
+  if (!state.gifPreviewBlob) return;
+  const fallback = gifFileName(getPlaybackFrames());
+  const fileName = safeDownloadName(els.gifFileName.value, fallback, ".gif");
+  downloadBlob(state.gifPreviewBlob, fileName);
+  toast(`已下载 ${fileName}`);
 }
 
 function downloadCutoutImage() {
@@ -1344,6 +1416,7 @@ function selectFrame(frame) {
   if (playbackIndex >= 0) {
     state.playhead = playbackIndex;
   } else {
+    clearGifPreview(false);
     state.startFrame = frame.index;
     state.frameCount = Math.max(1, getAllFrames().length - frame.index);
     state.playhead = 0;
@@ -1352,32 +1425,33 @@ function selectFrame(frame) {
   render();
 }
 
+function setPlayheadToFrameIndex(frameIndex) {
+  let playbackIndex = getPlaybackFrames().findIndex((frame) => frame.index === frameIndex);
+  if (playbackIndex < 0) {
+    state.startFrame = 0;
+    state.frameCount = Math.max(1, getAllFrames().length);
+    playbackIndex = getPlaybackFrames().findIndex((frame) => frame.index === frameIndex);
+  }
+  state.playhead = Math.max(0, playbackIndex);
+}
+
 function addFreeFrame(rect) {
   if (rect.width < 4 || rect.height < 4) return;
+  clearGifPreview(false);
   state.sliceMode = "free";
   state.freeFrames.push(rect);
-  state.freeFrames = sortFrames(state.freeFrames);
-  const frameIndex = state.freeFrames.findIndex(
-    (frame) => frame.x === rect.x && frame.y === rect.y && frame.width === rect.width && frame.height === rect.height,
-  );
   state.startFrame = 0;
   state.frameCount = state.freeFrames.length;
-  state.playhead = Math.max(0, frameIndex);
+  state.playhead = state.freeFrames.length - 1;
   state.lastTick = 0;
   render();
 }
 
 function replaceFreeFrame(frameIndex, frames, selectFrameIndex = 0) {
+  clearGifPreview(false);
   state.freeFrames.splice(frameIndex, 1, ...frames);
-  state.freeFrames = sortFrames(state.freeFrames);
   const selected = frames[selectFrameIndex] || frames[0];
-  const selectedIndex = state.freeFrames.findIndex(
-    (frame) =>
-      frame.x === selected.x &&
-      frame.y === selected.y &&
-      frame.width === selected.width &&
-      frame.height === selected.height,
-  );
+  const selectedIndex = state.freeFrames.indexOf(selected);
   state.startFrame = 0;
   state.frameCount = Math.max(1, state.freeFrames.length);
   state.playhead = Math.max(0, selectedIndex);
@@ -1414,16 +1488,38 @@ function splitCurrentFrame(axis) {
   splitFrame(currentFrame(), axis);
 }
 
+function moveCurrentFrame(targetIndex) {
+  if (state.sliceMode !== "free") return;
+  const frame = currentFrame();
+  if (!frame || state.freeFrames.length < 2) return;
+
+  const fromIndex = frame.index;
+  const toIndex = clamp(targetIndex, 0, state.freeFrames.length - 1);
+  if (fromIndex === toIndex) return;
+
+  clearGifPreview(false);
+  const [movedFrame] = state.freeFrames.splice(fromIndex, 1);
+  state.freeFrames.splice(toIndex, 0, movedFrame);
+  state.startFrame = clamp(state.startFrame, 0, Math.max(0, state.freeFrames.length - 1));
+  state.frameCount = clamp(state.frameCount, 1, Math.max(1, state.freeFrames.length - state.startFrame));
+  setPlayheadToFrameIndex(toIndex);
+  state.lastTick = 0;
+  render();
+  toast(`已移动到第 ${toIndex + 1} 帧`);
+}
+
 function deleteCurrentFrame() {
   if (state.sliceMode !== "free") return;
   const frame = currentFrame();
   if (!frame) return;
+  clearGifPreview(false);
   state.freeFrames.splice(frame.index, 1);
   state.playhead = clamp(state.playhead, 0, Math.max(0, state.freeFrames.length - 1));
   resetRange();
 }
 
 function clearFreeFrames() {
+  clearGifPreview(false);
   state.freeFrames = [];
   state.playhead = 0;
   resetRange();
@@ -1476,6 +1572,7 @@ function bindEvents() {
 
   Object.values(inputs).forEach((input) => {
     input.addEventListener("input", () => {
+      clearGifPreview(false);
       readControls();
       render();
     });
@@ -1489,6 +1586,16 @@ function bindEvents() {
   els.detectSpritesBtn.addEventListener("click", applyDetectedFrames);
   els.splitVerticalBtn.addEventListener("click", () => splitCurrentFrame("vertical"));
   els.splitHorizontalBtn.addEventListener("click", () => splitCurrentFrame("horizontal"));
+  els.moveFrameFirstBtn.addEventListener("click", () => moveCurrentFrame(0));
+  els.moveFramePrevBtn.addEventListener("click", () => {
+    const frame = currentFrame();
+    if (frame) moveCurrentFrame(frame.index - 1);
+  });
+  els.moveFrameNextBtn.addEventListener("click", () => {
+    const frame = currentFrame();
+    if (frame) moveCurrentFrame(frame.index + 1);
+  });
+  els.moveFrameLastBtn.addEventListener("click", () => moveCurrentFrame(state.freeFrames.length - 1));
   els.deleteFrameBtn.addEventListener("click", deleteCurrentFrame);
   els.clearFramesBtn.addEventListener("click", clearFreeFrames);
   els.autoGridBtn.addEventListener("click", applyGridGuess);
@@ -1503,6 +1610,17 @@ function bindEvents() {
 
   els.exportStripBtn.addEventListener("click", exportStrip);
   els.exportGifBtn.addEventListener("click", exportGif);
+  els.downloadGifBtn.addEventListener("click", downloadGifPreview);
+  els.regenerateGifBtn.addEventListener("click", exportGif);
+  els.closeGifPreviewBtn.addEventListener("click", closeGifPreview);
+  els.gifPreviewModal.addEventListener("click", (event) => {
+    if (event.target === els.gifPreviewModal) closeGifPreview();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !els.gifPreviewModal.hidden) {
+      closeGifPreview();
+    }
+  });
   els.exportFramesBtn.addEventListener("click", exportFrames);
   els.downloadFrameBtn.addEventListener("click", exportCurrentFrame);
   els.downloadCutoutBtn.addEventListener("click", downloadCutoutImage);

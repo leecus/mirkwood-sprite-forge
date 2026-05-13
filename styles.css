@@ -328,7 +328,7 @@ h2 {
 
 .inspector-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -364,7 +364,8 @@ h2 {
   display: none;
 }
 
-.slice-mode-panel {
+.slice-mode-panel,
+.slice-tool-panel {
   margin-top: 14px;
   border-top: 1px solid var(--line);
   padding-top: 14px;
@@ -404,6 +405,17 @@ h2 {
 
 .free-actions button:first-child {
   grid-column: 1 / -1;
+}
+
+.order-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.order-actions button {
+  padding: 0 8px;
 }
 
 .cutout-actions {
@@ -452,13 +464,15 @@ label {
 }
 
 .control-grid label,
-.range-control {
+.range-control,
+.file-name-control {
   display: grid;
   gap: 6px;
 }
 
 .control-grid span,
-.range-control span {
+.range-control span,
+.file-name-control span {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -467,6 +481,7 @@ label {
 }
 
 input[type="number"],
+input[type="text"],
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -475,12 +490,14 @@ textarea {
   background: rgba(255, 254, 247, 0.9);
 }
 
-input[type="number"] {
+input[type="number"],
+input[type="text"] {
   min-height: 38px;
   padding: 0 10px;
 }
 
 input[type="number"]:focus,
+input[type="text"]:focus,
 textarea:focus {
   outline: 2px solid rgba(11, 157, 143, 0.24);
   border-color: var(--accent);
@@ -531,6 +548,85 @@ input[type="range"] {
 
 .export-actions button {
   padding: 0 10px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 25, 22, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.gif-dialog {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  gap: 12px;
+  overflow: auto;
+  border: 1px solid rgba(23, 25, 22, 0.24);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(23, 25, 22, 0.28);
+}
+
+.gif-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icon-button {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.gif-preview-stage {
+  display: grid;
+  min-height: 230px;
+  max-height: 390px;
+  overflow: auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, rgba(23, 25, 22, 0.09) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(23, 25, 22, 0.09) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(23, 25, 22, 0.09) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(23, 25, 22, 0.09) 75%),
+    #fffef7;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.gif-preview-stage img {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+
+.gif-preview-meta {
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.gif-preview-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 textarea {
@@ -628,6 +724,7 @@ textarea {
   .toggles,
   .free-actions,
   .cutout-actions,
+  .order-actions,
   .export-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -641,7 +738,24 @@ textarea {
   }
 
   .inspector-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .gif-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 10px;
+  }
+
+  .gif-preview-stage {
+    min-height: 190px;
+  }
+
+  .gif-preview-actions {
+    grid-template-columns: 1fr;
   }
 
   .timeline-readout {

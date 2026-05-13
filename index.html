@@ -70,9 +70,6 @@
               <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="motionTab">
                 动画
               </button>
-              <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="cutoutTab">
-                透明
-              </button>
               <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="exportTab">
                 导出
               </button>
@@ -146,6 +143,13 @@
                   <button id="clearFramesBtn" type="button" class="ghost" data-requires-image>清空</button>
                 </div>
 
+                <div class="order-actions" aria-label="调整自由框帧顺序">
+                  <button id="moveFrameFirstBtn" type="button" class="ghost" data-requires-image>置首</button>
+                  <button id="moveFramePrevBtn" type="button" class="ghost" data-requires-image>前移</button>
+                  <button id="moveFrameNextBtn" type="button" class="ghost" data-requires-image>后移</button>
+                  <button id="moveFrameLastBtn" type="button" class="ghost" data-requires-image>置尾</button>
+                </div>
+
                 <label class="range-control">
                   <span>背景阈值 <b id="sensitivityValue">36</b></span>
                   <input id="detectSensitivity" type="range" min="8" max="120" step="1" value="36" />
@@ -161,6 +165,32 @@
                     <input id="detectMinArea" type="number" min="4" step="1" value="64" />
                   </label>
                 </div>
+              </div>
+
+              <div class="slice-tool-panel">
+                <div class="panel-head compact inner-head">
+                  <div>
+                    <span class="panel-kicker">Cutout</span>
+                    <h2>背景抠除</h2>
+                  </div>
+                  <div class="frame-badge" id="matteStatus">关闭</div>
+                </div>
+
+                <div class="cutout-actions">
+                  <label class="toggle-row"><input id="removeBackground" type="checkbox" /> 导出透明</label>
+                  <button id="sampleMatteBtn" type="button" class="ghost" data-requires-image>取背景点</button>
+                  <button id="downloadCutoutBtn" type="button" data-requires-image>下载透明原图</button>
+                </div>
+
+                <label class="range-control">
+                  <span>抠图阈值 <b id="matteThresholdValue">48</b></span>
+                  <input id="matteThreshold" type="range" min="8" max="180" step="1" value="48" />
+                </label>
+
+                <label class="range-control">
+                  <span>边缘羽化 <b id="matteFeatherValue">0</b></span>
+                  <input id="matteFeather" type="range" min="0" max="3" step="1" value="0" />
+                </label>
               </div>
             </div>
 
@@ -202,32 +232,6 @@
               </div>
             </div>
 
-            <div class="tab-panel" id="cutoutTab" role="tabpanel" hidden>
-              <div class="panel-head compact">
-                <div>
-                  <span class="panel-kicker">Cutout</span>
-                  <h2>背景抠除</h2>
-                </div>
-                <div class="frame-badge" id="matteStatus">关闭</div>
-              </div>
-
-              <div class="cutout-actions">
-                <label class="toggle-row"><input id="removeBackground" type="checkbox" /> 导出透明</label>
-                <button id="sampleMatteBtn" type="button" class="ghost" data-requires-image>取背景点</button>
-                <button id="downloadCutoutBtn" type="button" data-requires-image>下载透明原图</button>
-              </div>
-
-              <label class="range-control">
-                <span>抠图阈值 <b id="matteThresholdValue">48</b></span>
-                <input id="matteThreshold" type="range" min="8" max="180" step="1" value="48" />
-              </label>
-
-              <label class="range-control">
-                <span>边缘羽化 <b id="matteFeatherValue">0</b></span>
-                <input id="matteFeather" type="range" min="0" max="3" step="1" value="0" />
-              </label>
-            </div>
-
             <div class="tab-panel" id="exportTab" role="tabpanel" hidden>
               <div class="panel-head compact">
                 <div>
@@ -238,7 +242,7 @@
 
               <div class="export-actions">
                 <button id="exportStripBtn" type="button" data-requires-image>导出横向序列</button>
-                <button id="exportGifBtn" type="button" data-requires-image>导出 GIF</button>
+                <button id="exportGifBtn" type="button" data-requires-image>预览 GIF</button>
                 <button id="exportFramesBtn" type="button" data-requires-image>导出帧 PNG</button>
                 <button id="downloadFrameBtn" type="button" class="ghost" data-requires-image>下载当前帧</button>
                 <button id="downloadJsonBtn" type="button" class="ghost" data-requires-image>下载 JSON</button>
@@ -255,6 +259,33 @@
         <div class="timeline-readout">
           <div id="currentInfo">当前帧：-</div>
           <div id="pointerInfo">坐标：-</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="gifPreviewModal" hidden>
+      <section class="gif-dialog" role="dialog" aria-modal="true" aria-labelledby="gifDialogTitle">
+        <div class="gif-dialog-head">
+          <div>
+            <span class="panel-kicker">GIF Preview</span>
+            <h2 id="gifDialogTitle">GIF 导出预览</h2>
+          </div>
+          <button id="closeGifPreviewBtn" class="icon-button" type="button" aria-label="关闭 GIF 预览">×</button>
+        </div>
+
+        <div class="gif-preview-stage">
+          <img id="gifPreviewImage" alt="GIF 预览" />
+        </div>
+        <div class="gif-preview-meta" id="gifPreviewMeta">等待生成 GIF 预览</div>
+
+        <label class="file-name-control">
+          <span>文件名</span>
+          <input id="gifFileName" type="text" value="sprite.gif" spellcheck="false" />
+        </label>
+
+        <div class="gif-preview-actions">
+          <button id="regenerateGifBtn" type="button" class="ghost" data-requires-image>重新生成</button>
+          <button id="downloadGifBtn" type="button">下载 GIF</button>
         </div>
       </section>
     </div>
