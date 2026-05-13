@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mirkwood Sprite Forge">
+  <rect width="64" height="64" rx="12" fill="#171916"/>
+  <rect x="8" y="8" width="48" height="48" rx="6" fill="#fffef7"/>
+  <path d="M16 16h12v12H16zM32 16h16v12H32zM16 32h12v16H16z" fill="#171916" opacity=".14"/>
+  <path d="M32 32h16v16H32z" fill="#0b9d8f"/>
+  <path d="M32 32h16v4H32zM32 32h4v16h-4z" fill="#31c9b8"/>
+  <path d="M16 16h32v32H16z" fill="none" stroke="#171916" stroke-width="3"/>
+  <path d="M16 30h32M30 16v32" stroke="#171916" stroke-width="3"/>
+  <path d="M47 9h4v6h6v4h-6v6h-4v-6h-6v-4h6z" fill="#e6543f"/>
+  <path d="M10 46h8v8h-8z" fill="#c69318"/>
+</svg>

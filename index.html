@@ -4,13 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Mirkwood Sprite Forge</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
+          <img class="brand-mark" src="favicon.svg" alt="" aria-hidden="true" />
           <div>
             <h1>Mirkwood Sprite Forge</h1>
             <p>Sprite animation cutter</p>
@@ -23,13 +24,6 @@
           <strong id="fileLabel">拖入或选择精灵图</strong>
           <small id="imageMeta">PNG / WEBP / JPG / GIF</small>
         </label>
-
-        <div class="top-actions">
-          <button id="exportStripBtn" type="button" data-requires-image>导出横向序列</button>
-          <button id="exportGifBtn" type="button" data-requires-image>导出 GIF</button>
-          <button id="exportFramesBtn" type="button" data-requires-image>导出帧 PNG</button>
-          <button id="copyCssBtn" type="button" data-requires-image>复制 CSS</button>
-        </div>
       </header>
 
       <main class="workspace">
@@ -44,11 +38,6 @@
 
           <div class="canvas-shell" id="canvasShell">
             <canvas id="sheetCanvas" width="960" height="540"></canvas>
-          </div>
-
-          <div class="sheet-footer">
-            <div id="currentInfo">当前帧：-</div>
-            <div id="pointerInfo">坐标：-</div>
           </div>
         </section>
 
@@ -73,168 +62,200 @@
             </div>
           </section>
 
-          <section class="control-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">Mode</span>
-                <h2>切片模式</h2>
+          <section class="control-panel inspector-panel">
+            <div class="inspector-tabs" role="tablist" aria-label="工具面板">
+              <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-target="sliceTab">
+                切片
+              </button>
+              <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="motionTab">
+                动画
+              </button>
+              <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="cutoutTab">
+                透明
+              </button>
+              <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-target="exportTab">
+                导出
+              </button>
+            </div>
+
+            <div class="tab-panel is-active" id="sliceTab" role="tabpanel">
+              <div class="panel-head compact">
+                <div>
+                  <span class="panel-kicker">Mode</span>
+                  <h2>切片模式</h2>
+                </div>
+                <div class="frame-badge" id="sliceModeStatus">网格</div>
               </div>
-              <div class="frame-badge" id="sliceModeStatus">网格</div>
-            </div>
 
-            <div class="mode-switch" role="group" aria-label="切片模式">
-              <button id="gridModeBtn" type="button" class="segment is-active">网格</button>
-              <button id="freeModeBtn" type="button" class="segment">自由框</button>
-            </div>
-
-            <div class="free-actions">
-              <button id="detectSpritesBtn" type="button" data-requires-image>智能识别</button>
-              <button id="splitVerticalBtn" type="button" class="ghost" data-requires-image>纵向拆分</button>
-              <button id="splitHorizontalBtn" type="button" class="ghost" data-requires-image>横向拆分</button>
-              <button id="deleteFrameBtn" type="button" class="ghost" data-requires-image>删除当前</button>
-              <button id="clearFramesBtn" type="button" class="ghost" data-requires-image>清空</button>
-            </div>
-
-            <label class="range-control">
-              <span>背景阈值 <b id="sensitivityValue">36</b></span>
-              <input id="detectSensitivity" type="range" min="8" max="120" step="1" value="36" />
-            </label>
-
-            <div class="control-grid two compact-grid">
-              <label>
-                <span>识别留白</span>
-                <input id="detectPadding" type="number" min="0" max="64" step="1" value="2" />
-              </label>
-              <label>
-                <span>最小面积</span>
-                <input id="detectMinArea" type="number" min="4" step="1" value="64" />
-              </label>
-            </div>
-          </section>
-
-          <section class="control-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">Cutout</span>
-                <h2>背景抠除</h2>
+              <div class="mode-switch" role="group" aria-label="切片模式">
+                <button id="gridModeBtn" type="button" class="segment is-active">网格</button>
+                <button id="freeModeBtn" type="button" class="segment">自由框</button>
               </div>
-              <div class="frame-badge" id="matteStatus">关闭</div>
-            </div>
 
-            <div class="cutout-actions">
-              <label class="toggle-row"><input id="removeBackground" type="checkbox" /> 导出透明</label>
-              <button id="sampleMatteBtn" type="button" class="ghost" data-requires-image>取背景点</button>
-              <button id="downloadCutoutBtn" type="button" data-requires-image>下载透明原图</button>
-            </div>
+              <div class="slice-mode-panel" id="gridSliceControls">
+                <div class="panel-head compact inner-head">
+                  <div>
+                    <span class="panel-kicker">Grid</span>
+                    <h2>切片网格</h2>
+                  </div>
+                  <button id="autoGridBtn" type="button" class="ghost" data-requires-image>自动</button>
+                </div>
 
-            <label class="range-control">
-              <span>抠图阈值 <b id="matteThresholdValue">48</b></span>
-              <input id="matteThreshold" type="range" min="8" max="180" step="1" value="48" />
-            </label>
-
-            <label class="range-control">
-              <span>边缘羽化 <b id="matteFeatherValue">0</b></span>
-              <input id="matteFeather" type="range" min="0" max="3" step="1" value="0" />
-            </label>
-          </section>
-
-          <section class="control-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">Grid</span>
-                <h2>切片网格</h2>
+                <div class="control-grid two" id="gridControls">
+                  <label>
+                    <span>帧宽</span>
+                    <input id="frameWidth" type="number" min="1" step="1" value="64" />
+                  </label>
+                  <label>
+                    <span>帧高</span>
+                    <input id="frameHeight" type="number" min="1" step="1" value="64" />
+                  </label>
+                  <label>
+                    <span>左边距</span>
+                    <input id="marginX" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>
+                    <span>上边距</span>
+                    <input id="marginY" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>
+                    <span>横间距</span>
+                    <input id="gapX" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>
+                    <span>纵间距</span>
+                    <input id="gapY" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>
+                    <span>列数</span>
+                    <input id="columns" type="number" min="1" step="1" value="1" />
+                  </label>
+                  <label>
+                    <span>行数</span>
+                    <input id="rows" type="number" min="1" step="1" value="1" />
+                  </label>
+                </div>
               </div>
-              <button id="autoGridBtn" type="button" class="ghost" data-requires-image>自动</button>
-            </div>
 
-            <div class="control-grid two" id="gridControls">
-              <label>
-                <span>帧宽</span>
-                <input id="frameWidth" type="number" min="1" step="1" value="64" />
-              </label>
-              <label>
-                <span>帧高</span>
-                <input id="frameHeight" type="number" min="1" step="1" value="64" />
-              </label>
-              <label>
-                <span>左边距</span>
-                <input id="marginX" type="number" min="0" step="1" value="0" />
-              </label>
-              <label>
-                <span>上边距</span>
-                <input id="marginY" type="number" min="0" step="1" value="0" />
-              </label>
-              <label>
-                <span>横间距</span>
-                <input id="gapX" type="number" min="0" step="1" value="0" />
-              </label>
-              <label>
-                <span>纵间距</span>
-                <input id="gapY" type="number" min="0" step="1" value="0" />
-              </label>
-              <label>
-                <span>列数</span>
-                <input id="columns" type="number" min="1" step="1" value="1" />
-              </label>
-              <label>
-                <span>行数</span>
-                <input id="rows" type="number" min="1" step="1" value="1" />
-              </label>
-            </div>
-          </section>
+              <div class="slice-mode-panel is-hidden" id="freeSliceControls">
+                <div class="free-actions">
+                  <button id="detectSpritesBtn" type="button" data-requires-image>智能识别</button>
+                  <button id="splitVerticalBtn" type="button" class="ghost" data-requires-image>纵向拆分</button>
+                  <button id="splitHorizontalBtn" type="button" class="ghost" data-requires-image>横向拆分</button>
+                  <button id="deleteFrameBtn" type="button" class="ghost" data-requires-image>删除当前</button>
+                  <button id="clearFramesBtn" type="button" class="ghost" data-requires-image>清空</button>
+                </div>
 
-          <section class="control-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">Motion</span>
-                <h2>动画参数</h2>
+                <label class="range-control">
+                  <span>背景阈值 <b id="sensitivityValue">36</b></span>
+                  <input id="detectSensitivity" type="range" min="8" max="120" step="1" value="36" />
+                </label>
+
+                <div class="control-grid two compact-grid">
+                  <label>
+                    <span>识别留白</span>
+                    <input id="detectPadding" type="number" min="0" max="64" step="1" value="2" />
+                  </label>
+                  <label>
+                    <span>最小面积</span>
+                    <input id="detectMinArea" type="number" min="4" step="1" value="64" />
+                  </label>
+                </div>
               </div>
-              <button id="resetRangeBtn" type="button" class="ghost" data-requires-image>重置</button>
             </div>
 
-            <div class="control-grid two">
-              <label>
-                <span>起始帧</span>
-                <input id="startFrame" type="number" min="0" step="1" value="0" />
+            <div class="tab-panel" id="motionTab" role="tabpanel" hidden>
+              <div class="panel-head compact">
+                <div>
+                  <span class="panel-kicker">Motion</span>
+                  <h2>动画参数</h2>
+                </div>
+                <button id="resetRangeBtn" type="button" class="ghost" data-requires-image>重置</button>
+              </div>
+
+              <div class="control-grid two">
+                <label>
+                  <span>起始帧</span>
+                  <input id="startFrame" type="number" min="0" step="1" value="0" />
+                </label>
+                <label>
+                  <span>帧数量</span>
+                  <input id="frameCount" type="number" min="1" step="1" value="1" />
+                </label>
+              </div>
+
+              <label class="range-control">
+                <span>FPS <b id="fpsValue">12</b></span>
+                <input id="fps" type="range" min="1" max="60" step="1" value="12" />
               </label>
-              <label>
-                <span>帧数量</span>
-                <input id="frameCount" type="number" min="1" step="1" value="1" />
+
+              <label class="range-control">
+                <span>预览倍率 <b id="scaleValue">4x</b></span>
+                <input id="scale" type="range" min="1" max="12" step="1" value="4" />
+              </label>
+
+              <div class="toggles">
+                <label><input id="showGrid" type="checkbox" checked /> 网格</label>
+                <label><input id="showIndex" type="checkbox" checked /> 序号</label>
+                <label><input id="reverse" type="checkbox" /> 反向</label>
+                <label><input id="pingpong" type="checkbox" /> 往返</label>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="cutoutTab" role="tabpanel" hidden>
+              <div class="panel-head compact">
+                <div>
+                  <span class="panel-kicker">Cutout</span>
+                  <h2>背景抠除</h2>
+                </div>
+                <div class="frame-badge" id="matteStatus">关闭</div>
+              </div>
+
+              <div class="cutout-actions">
+                <label class="toggle-row"><input id="removeBackground" type="checkbox" /> 导出透明</label>
+                <button id="sampleMatteBtn" type="button" class="ghost" data-requires-image>取背景点</button>
+                <button id="downloadCutoutBtn" type="button" data-requires-image>下载透明原图</button>
+              </div>
+
+              <label class="range-control">
+                <span>抠图阈值 <b id="matteThresholdValue">48</b></span>
+                <input id="matteThreshold" type="range" min="8" max="180" step="1" value="48" />
+              </label>
+
+              <label class="range-control">
+                <span>边缘羽化 <b id="matteFeatherValue">0</b></span>
+                <input id="matteFeather" type="range" min="0" max="3" step="1" value="0" />
               </label>
             </div>
 
-            <label class="range-control">
-              <span>FPS <b id="fpsValue">12</b></span>
-              <input id="fps" type="range" min="1" max="60" step="1" value="12" />
-            </label>
+            <div class="tab-panel" id="exportTab" role="tabpanel" hidden>
+              <div class="panel-head compact">
+                <div>
+                  <span class="panel-kicker">Export</span>
+                  <h2>导出资源</h2>
+                </div>
+              </div>
 
-            <label class="range-control">
-              <span>预览倍率 <b id="scaleValue">4x</b></span>
-              <input id="scale" type="range" min="1" max="12" step="1" value="4" />
-            </label>
+              <div class="export-actions">
+                <button id="exportStripBtn" type="button" data-requires-image>导出横向序列</button>
+                <button id="exportGifBtn" type="button" data-requires-image>导出 GIF</button>
+                <button id="exportFramesBtn" type="button" data-requires-image>导出帧 PNG</button>
+                <button id="downloadFrameBtn" type="button" class="ghost" data-requires-image>下载当前帧</button>
+                <button id="downloadJsonBtn" type="button" class="ghost" data-requires-image>下载 JSON</button>
+                <button id="copyCssBtn" type="button" class="ghost" data-requires-image>复制 CSS</button>
+              </div>
 
-            <div class="toggles">
-              <label><input id="showGrid" type="checkbox" checked /> 网格</label>
-              <label><input id="showIndex" type="checkbox" checked /> 序号</label>
-              <label><input id="reverse" type="checkbox" /> 反向</label>
-              <label><input id="pingpong" type="checkbox" /> 往返</label>
+              <textarea id="cssOutput" readonly spellcheck="false"></textarea>
             </div>
           </section>
         </aside>
       </main>
 
-      <section class="output-panel" aria-label="导出代码">
-        <div class="panel-head compact">
-          <div>
-            <span class="panel-kicker">Export</span>
-            <h2>CSS 动画片段</h2>
-          </div>
-          <div class="output-actions">
-            <button id="downloadJsonBtn" type="button" class="ghost" data-requires-image>下载 JSON</button>
-            <button id="downloadFrameBtn" type="button" class="ghost" data-requires-image>下载当前帧</button>
-          </div>
+      <section class="timeline-panel" aria-label="帧状态">
+        <div class="timeline-readout">
+          <div id="currentInfo">当前帧：-</div>
+          <div id="pointerInfo">坐标：-</div>
         </div>
-        <textarea id="cssOutput" readonly spellcheck="false"></textarea>
       </section>
     </div>
 

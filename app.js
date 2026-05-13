@@ -36,6 +36,10 @@ const els = {
   downloadCutoutBtn: $("#downloadCutoutBtn"),
   matteStatus: $("#matteStatus"),
   sliceModeStatus: $("#sliceModeStatus"),
+  gridSliceControls: $("#gridSliceControls"),
+  freeSliceControls: $("#freeSliceControls"),
+  tabButtons: document.querySelectorAll("[data-tab-target]"),
+  tabPanels: document.querySelectorAll(".tab-panel"),
   sensitivityValue: $("#sensitivityValue"),
   matteThresholdValue: $("#matteThresholdValue"),
   matteFeatherValue: $("#matteFeatherValue"),
@@ -202,6 +206,8 @@ function syncControls() {
   els.sliceModeStatus.textContent = state.sliceMode === "grid" ? "网格" : "自由框";
   els.sheetCanvas.classList.toggle("is-free-mode", state.sliceMode === "free");
   els.sheetCanvas.classList.toggle("is-sampling", state.sampleMatte);
+  els.gridSliceControls.classList.toggle("is-hidden", state.sliceMode !== "grid");
+  els.freeSliceControls.classList.toggle("is-hidden", state.sliceMode !== "free");
   document.querySelectorAll("#gridControls input").forEach((input) => {
     input.disabled = state.sliceMode !== "grid";
   });
@@ -1423,6 +1429,20 @@ function clearFreeFrames() {
   resetRange();
 }
 
+function showInspectorTab(tabId) {
+  els.tabButtons.forEach((button) => {
+    const isActive = button.dataset.tabTarget === tabId;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  });
+
+  els.tabPanels.forEach((panel) => {
+    const isActive = panel.id === tabId;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+}
+
 function bindEvents() {
   els.fileInput.addEventListener("change", (event) => {
     loadFile(event.target.files[0]);
@@ -1463,6 +1483,9 @@ function bindEvents() {
 
   els.gridModeBtn.addEventListener("click", () => setSliceMode("grid"));
   els.freeModeBtn.addEventListener("click", () => setSliceMode("free"));
+  els.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => showInspectorTab(button.dataset.tabTarget));
+  });
   els.detectSpritesBtn.addEventListener("click", applyDetectedFrames);
   els.splitVerticalBtn.addEventListener("click", () => splitCurrentFrame("vertical"));
   els.splitHorizontalBtn.addEventListener("click", () => splitCurrentFrame("horizontal"));
