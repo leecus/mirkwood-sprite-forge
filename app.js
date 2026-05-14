@@ -18,6 +18,7 @@ const els = {
   prevBtn: $("#prevBtn"),
   nextBtn: $("#nextBtn"),
   autoGridBtn: $("#autoGridBtn"),
+  fitGridBtn: $("#fitGridBtn"),
   resetRangeBtn: $("#resetRangeBtn"),
   exportStripBtn: $("#exportStripBtn"),
   exportGifBtn: $("#exportGifBtn"),
@@ -74,6 +75,9 @@ const inputs = {
   detectSensitivity: $("#detectSensitivity"),
   detectPadding: $("#detectPadding"),
   detectMinArea: $("#detectMinArea"),
+  lockFreeFrameSize: $("#lockFreeFrameSize"),
+  freeFrameWidth: $("#freeFrameWidth"),
+  freeFrameHeight: $("#freeFrameHeight"),
   removeBackground: $("#removeBackground"),
   matteThreshold: $("#matteThreshold"),
   matteFeather: $("#matteFeather"),
@@ -112,6 +116,9 @@ const state = {
   detectSensitivity: 36,
   detectPadding: 2,
   detectMinArea: 64,
+  lockFreeFrameSize: false,
+  freeFrameWidth: 64,
+  freeFrameHeight: 64,
   showGrid: true,
   showIndex: true,
   reverse: false,
@@ -122,6 +129,9 @@ const state = {
   dragStart: null,
   dragCurrent: null,
   didDrag: false,
+  dragMode: null,
+  movingFrameIndex: -1,
+  moveOrigin: null,
   gifPreviewBlob: null,
   gifPreviewUrl: "",
 };
@@ -178,10 +188,8 @@ function readControls() {
   state.gapX = clamp(intFrom(inputs.gapX, state.gapX), 0, maxImageWidth);
   state.gapY = clamp(intFrom(inputs.gapY, state.gapY), 0, maxImageHeight);
 
-  const maxCols = getMaxColumns();
-  const maxRows = getMaxRows();
-  state.columns = clamp(intFrom(inputs.columns, state.columns), 1, Math.max(1, maxCols));
-  state.rows = clamp(intFrom(inputs.rows, state.rows), 1, Math.max(1, maxRows));
+  state.columns = clamp(intFrom(inputs.columns, state.columns), 1, 256);
+  state.rows = clamp(intFrom(inputs.rows, state.rows), 1, 256);
 
   const total = getAllFrames().length || 1;
   state.startFrame = clamp(intFrom(inputs.startFrame, state.startFrame), 0, Math.max(0, total - 1));
@@ -191,6 +199,9 @@ function readControls() {
   state.detectSensitivity = clamp(intFrom(inputs.detectSensitivity, state.detectSensitivity), 8, 120);
   state.detectPadding = clamp(intFrom(inputs.detectPadding, state.detectPadding), 0, 64);
   state.detectMinArea = clamp(intFrom(inputs.detectMinArea, state.detectMinArea), 4, maxImageWidth * maxImageHeight);
+  state.lockFreeFrameSize = inputs.lockFreeFrameSize.checked;
+  state.freeFrameWidth = clamp(intFrom(inputs.freeFrameWidth, state.freeFrameWidth), 1, maxImageWidth);
+  state.freeFrameHeight = clamp(intFrom(inputs.freeFrameHeight, state.freeFrameHeight), 1, maxImageHeight);
   state.removeBackground = inputs.removeBackground.checked;
   state.matteThreshold = clamp(intFrom(inputs.matteThreshold, state.matteThreshold), 8, 180);
   state.matteFeather = clamp(intFrom(inputs.matteFeather, state.matteFeather), 0, 3);
@@ -217,6 +228,9 @@ function syncControls() {
   inputs.detectSensitivity.value = state.detectSensitivity;
   inputs.detectPadding.value = state.detectPadding;
   inputs.detectMinArea.value = state.detectMinArea;
+  inputs.lockFreeFrameSize.checked = state.lockFreeFrameSize;
+  inputs.freeFrameWidth.value = state.freeFrameWidth;
+  inputs.freeFrameHeight.value = state.freeFrameHeight;
   inputs.removeBackground.checked = state.removeBackground;
   inputs.matteThreshold.value = state.matteThreshold;
   inputs.matteFeather.value = state.matteFeather;
@@ -357,6 +371,24 @@ function normalizeRect(start, end) {
   };
 }
 
+function createFreeDrawRect(start, end) {
+  if (!state.lockFreeFrameSize) return normalizeRect(start, end);
+
+  const width = Math.min(state.freeFrameWidth, state.image.width);
+  const height = Math.min(state.freeFrameHeight, state.image.height);
+  const directionX = end.x < start.x ? -1 : 1;
+  const directionY = end.y < start.y ? -1 : 1;
+  const x = directionX < 0 ? start.x - width : start.x;
+  const y = directionY < 0 ? start.y - height : start.y;
+
+  return {
+    x: clamp(Math.floor(x), 0, Math.max(0, state.image.width - width)),
+    y: clamp(Math.floor(y), 0, Math.max(0, state.image.height - height)),
+    width,
+    height,
+  };
+}
+
 function createCheckerPattern(ctx, size, a = "#d8ded2", b = "#eef2ec") {
   const patternCanvas = document.createElement("canvas");
   const patternCtx = patternCanvas.getContext("2d");
@@ -434,8 +466,8 @@ function drawSheet() {
     ctx.restore();
   }
 
-  if (state.sliceMode === "free" && state.dragStart && state.dragCurrent) {
-    const rect = normalizeRect(state.dragStart, state.dragCurrent);
+  if (state.sliceMode === "free" && state.dragMode === "draw" && state.dragStart && state.dragCurrent) {
+    const rect = createFreeDrawRect(state.dragStart, state.dragCurrent);
     if (rect.width > 0 && rect.height > 0) {
       ctx.save();
       ctx.setLineDash([8, 5]);
@@ -939,6 +971,132 @@ function mergeBoxes(boxes) {
   return merged;
 }
 
+function foregroundAreaInBox(box, mask, imageWidth) {
+  let area = 0;
+  for (let y = box.y; y < box.y + box.height; y += 1) {
+    for (let x = box.x; x < box.x + box.width; x += 1) {
+      if (mask[y * imageWidth + x]) area += 1;
+    }
+  }
+  return area;
+}
+
+function tightenBoxToMask(box, mask, imageWidth) {
+  let minX = box.x + box.width;
+  let minY = box.y + box.height;
+  let maxX = box.x;
+  let maxY = box.y;
+  let area = 0;
+
+  for (let y = box.y; y < box.y + box.height; y += 1) {
+    for (let x = box.x; x < box.x + box.width; x += 1) {
+      if (!mask[y * imageWidth + x]) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      area += 1;
+    }
+  }
+
+  if (area < state.detectMinArea) return null;
+
+  return expandBox(
+    {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+      area,
+    },
+    state.detectPadding,
+  );
+}
+
+function projectionCuts(box, mask, imageWidth, axis) {
+  const length = axis === "vertical" ? box.width : box.height;
+  const cross = axis === "vertical" ? box.height : box.width;
+  const minSegment = 4;
+  const minBlankRun = Math.max(2, Math.min(12, state.detectPadding + 1));
+  const blankThreshold = Math.max(0, Math.floor(cross * 0.015));
+  const cuts = [];
+  let runStart = -1;
+
+  for (let offset = 0; offset < length; offset += 1) {
+    let count = 0;
+    for (let crossOffset = 0; crossOffset < cross; crossOffset += 1) {
+      const x = axis === "vertical" ? box.x + offset : box.x + crossOffset;
+      const y = axis === "vertical" ? box.y + crossOffset : box.y + offset;
+      if (mask[y * imageWidth + x]) count += 1;
+    }
+
+    const isBlank = count <= blankThreshold;
+    if (isBlank && runStart < 0) {
+      runStart = offset;
+    } else if (!isBlank && runStart >= 0) {
+      const runEnd = offset - 1;
+      const runLength = runEnd - runStart + 1;
+      const cut = Math.floor((runStart + runEnd + 1) / 2);
+      if (runLength >= minBlankRun && cut >= minSegment && length - cut >= minSegment) {
+        cuts.push(cut);
+      }
+      runStart = -1;
+    }
+  }
+
+  return cuts;
+}
+
+function splitBoxByCuts(box, cuts, axis) {
+  if (!cuts.length) return [box];
+  const pieces = [];
+  let start = 0;
+  const length = axis === "vertical" ? box.width : box.height;
+
+  cuts.concat(length).forEach((cut) => {
+    const size = cut - start;
+    if (size >= 4) {
+      pieces.push(
+        axis === "vertical"
+          ? { ...box, x: box.x + start, width: size }
+          : { ...box, y: box.y + start, height: size },
+      );
+    }
+    start = cut;
+  });
+
+  return pieces;
+}
+
+function splitBoxByWhitespace(box, mask, imageWidth) {
+  const verticalCuts = projectionCuts(box, mask, imageWidth, "vertical");
+  const verticalPieces = splitBoxByCuts(box, verticalCuts, "vertical");
+  const splitPieces = verticalPieces.flatMap((piece) => {
+    const horizontalCuts = projectionCuts(piece, mask, imageWidth, "horizontal");
+    return splitBoxByCuts(piece, horizontalCuts, "horizontal");
+  });
+
+  const tightened = splitPieces
+    .map((piece) => tightenBoxToMask(piece, mask, imageWidth))
+    .filter(Boolean);
+
+  if (tightened.length <= 1) {
+    return [box];
+  }
+
+  return tightened;
+}
+
+function splitMergedBoxes(boxes, imageData) {
+  const mask = createForegroundMask(imageData);
+  return boxes.flatMap((box) => {
+    const area = foregroundAreaInBox(box, mask, imageData.width);
+    const fillRatio = area / Math.max(1, box.width * box.height);
+    if (fillRatio > 0.62) return [box];
+    return splitBoxByWhitespace(box, mask, imageData.width);
+  });
+}
+
 function sortFrames(frames) {
   return frames.sort((a, b) => {
     const rowTolerance = Math.max(a.height, b.height) * 0.45;
@@ -952,7 +1110,7 @@ function detectFreeFrames() {
   const boxes = findComponentBoxes(imageData)
     .map((box) => expandBox(box, state.detectPadding))
     .filter((box) => box.width >= 4 && box.height >= 4);
-  return sortFrames(mergeBoxes(boxes)).map(({ x, y, width, height }) => ({
+  return sortFrames(splitMergedBoxes(mergeBoxes(boxes), imageData)).map(({ x, y, width, height }) => ({
     x,
     y,
     width,
@@ -977,6 +1135,9 @@ function applyDetectedFrames() {
   state.startFrame = 0;
   state.frameCount = Math.max(1, frames.length);
   state.playhead = 0;
+  if (frames.length) {
+    captureFreeFrameSize(frames[0]);
+  }
   render();
   toast(frames.length ? `识别到 ${frames.length} 帧` : "没有识别到独立帧");
 }
@@ -998,6 +1159,28 @@ function applyGridGuess() {
   state.frameCount = Math.max(1, state.columns * state.rows);
   state.playhead = 0;
   render();
+}
+
+function applyGridFit() {
+  if (!state.image) return;
+  clearGifPreview(false);
+  readControls();
+
+  const usableWidth = state.image.width - state.marginX - state.gapX * (state.columns - 1);
+  const usableHeight = state.image.height - state.marginY - state.gapY * (state.rows - 1);
+  if (usableWidth < state.columns || usableHeight < state.rows) {
+    toast("行列或间距超出图片范围");
+    return;
+  }
+
+  state.sliceMode = "grid";
+  state.frameWidth = Math.max(1, Math.floor(usableWidth / state.columns));
+  state.frameHeight = Math.max(1, Math.floor(usableHeight / state.rows));
+  state.startFrame = 0;
+  state.frameCount = Math.max(1, getGridFrames().length);
+  state.playhead = 0;
+  render();
+  toast(`已均分为 ${state.columns} 列 x ${state.rows} 行`);
 }
 
 function resetRange() {
@@ -1421,8 +1604,20 @@ function selectFrame(frame) {
     state.frameCount = Math.max(1, getAllFrames().length - frame.index);
     state.playhead = 0;
   }
+  if (state.sliceMode === "free") {
+    captureFreeFrameSize(frame);
+  }
   state.lastTick = 0;
   render();
+}
+
+function captureFreeFrameSize(frame, enableLock = false) {
+  if (!frame) return;
+  state.freeFrameWidth = Math.max(1, frame.width);
+  state.freeFrameHeight = Math.max(1, frame.height);
+  if (enableLock) {
+    state.lockFreeFrameSize = true;
+  }
 }
 
 function setPlayheadToFrameIndex(frameIndex) {
@@ -1439,7 +1634,9 @@ function addFreeFrame(rect) {
   if (rect.width < 4 || rect.height < 4) return;
   clearGifPreview(false);
   state.sliceMode = "free";
+  const isFirstFreeFrame = state.freeFrames.length === 0;
   state.freeFrames.push(rect);
+  captureFreeFrameSize(rect, isFirstFreeFrame || state.lockFreeFrameSize);
   state.startFrame = 0;
   state.frameCount = state.freeFrames.length;
   state.playhead = state.freeFrames.length - 1;
@@ -1506,6 +1703,62 @@ function moveCurrentFrame(targetIndex) {
   state.lastTick = 0;
   render();
   toast(`已移动到第 ${toIndex + 1} 帧`);
+}
+
+function moveDraggedFreeFrame(point) {
+  const frame = state.freeFrames[state.movingFrameIndex];
+  if (!frame || !state.moveOrigin || !state.dragStart) return;
+
+  const dx = point.x - state.dragStart.x;
+  const dy = point.y - state.dragStart.y;
+  frame.x = clamp(Math.round(state.moveOrigin.x + dx), 0, Math.max(0, state.image.width - frame.width));
+  frame.y = clamp(Math.round(state.moveOrigin.y + dy), 0, Math.max(0, state.image.height - frame.height));
+}
+
+function nudgeCurrentFreeFrame(dx, dy) {
+  if (state.sliceMode !== "free" || !state.image) return false;
+  const frame = currentFrame();
+  if (!frame) return false;
+
+  const nextX = clamp(frame.x + dx, 0, Math.max(0, state.image.width - frame.width));
+  const nextY = clamp(frame.y + dy, 0, Math.max(0, state.image.height - frame.height));
+  if (nextX === frame.x && nextY === frame.y) return true;
+
+  clearGifPreview(false);
+  state.freeFrames[frame.index] = {
+    ...state.freeFrames[frame.index],
+    x: nextX,
+    y: nextY,
+  };
+  state.lastTick = 0;
+  render();
+  return true;
+}
+
+function handleFreeFrameNudge(event) {
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+
+  const step = event.shiftKey ? 10 : 1;
+  const delta = {
+    ArrowUp: [0, -step],
+    ArrowDown: [0, step],
+    ArrowLeft: [-step, 0],
+    ArrowRight: [step, 0],
+  }[event.key];
+
+  if (nudgeCurrentFreeFrame(delta[0], delta[1])) {
+    event.preventDefault();
+  }
+}
+
+function resetFreeDrag() {
+  state.dragStart = null;
+  state.dragCurrent = null;
+  state.didDrag = false;
+  state.dragMode = null;
+  state.movingFrameIndex = -1;
+  state.moveOrigin = null;
 }
 
 function deleteCurrentFrame() {
@@ -1577,6 +1830,12 @@ function bindEvents() {
       render();
     });
   });
+  inputs.lockFreeFrameSize.addEventListener("change", () => {
+    if (inputs.lockFreeFrameSize.checked && state.sliceMode === "free") {
+      captureFreeFrameSize(currentFrame(), true);
+      render();
+    }
+  });
 
   els.gridModeBtn.addEventListener("click", () => setSliceMode("grid"));
   els.freeModeBtn.addEventListener("click", () => setSliceMode("free"));
@@ -1598,6 +1857,7 @@ function bindEvents() {
   els.moveFrameLastBtn.addEventListener("click", () => moveCurrentFrame(state.freeFrames.length - 1));
   els.deleteFrameBtn.addEventListener("click", deleteCurrentFrame);
   els.clearFramesBtn.addEventListener("click", clearFreeFrames);
+  els.fitGridBtn.addEventListener("click", applyGridFit);
   els.autoGridBtn.addEventListener("click", applyGridGuess);
   els.resetRangeBtn.addEventListener("click", resetRange);
   els.prevBtn.addEventListener("click", () => stepPlayhead(-1));
@@ -1619,7 +1879,9 @@ function bindEvents() {
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.gifPreviewModal.hidden) {
       closeGifPreview();
+      return;
     }
+    handleFreeFrameNudge(event);
   });
   els.exportFramesBtn.addEventListener("click", exportFrames);
   els.downloadFrameBtn.addEventListener("click", exportCurrentFrame);
@@ -1642,6 +1904,9 @@ function bindEvents() {
       state.didDrag =
         Math.abs(state.dragCurrent.x - state.dragStart.x) > 3 ||
         Math.abs(state.dragCurrent.y - state.dragStart.y) > 3;
+      if (state.dragMode === "move" && state.didDrag) {
+        moveDraggedFreeFrame(point);
+      }
       render();
     }
   });
@@ -1657,9 +1922,14 @@ function bindEvents() {
     }
     if (!state.image || state.sliceMode !== "free") return;
     event.preventDefault();
-    state.dragStart = pointerToCanvas(event);
+    const point = pointerToCanvas(event);
+    const hit = findFrameAt(point);
+    state.dragStart = point;
     state.dragCurrent = state.dragStart;
     state.didDrag = false;
+    state.dragMode = hit ? "move" : "draw";
+    state.movingFrameIndex = hit ? hit.index : -1;
+    state.moveOrigin = hit ? { x: hit.x, y: hit.y } : null;
   });
 
   window.addEventListener("mouseup", (event) => {
@@ -1669,12 +1939,38 @@ function bindEvents() {
     }
 
     if (!state.image || state.sliceMode !== "free" || !state.dragStart) return;
-    state.dragCurrent = pointerToCanvas(event);
-    const rect = normalizeRect(state.dragStart, state.dragCurrent);
+    const point = pointerToCanvas(event);
+    state.dragCurrent = point;
+    const mode = state.dragMode;
+    const movingFrameIndex = state.movingFrameIndex;
+    const rect = createFreeDrawRect(state.dragStart, state.dragCurrent);
     const wasDrag = state.didDrag;
-    state.dragStart = null;
-    state.dragCurrent = null;
-    state.didDrag = false;
+
+    if (mode === "move") {
+      if (wasDrag) {
+        moveDraggedFreeFrame(point);
+        clearGifPreview(false);
+        setPlayheadToFrameIndex(movingFrameIndex);
+        resetFreeDrag();
+        state.lastTick = 0;
+        render();
+        toast("已移动当前帧");
+        return;
+      }
+
+      const hit = findFrameAt(point);
+      resetFreeDrag();
+      if (hit && event.altKey) {
+        splitFrame(hit, event.shiftKey ? "horizontal" : "vertical", point);
+      } else if (hit) {
+        selectFrame(hit);
+      } else {
+        render();
+      }
+      return;
+    }
+
+    resetFreeDrag();
 
     if (wasDrag) {
       addFreeFrame(rect);

@@ -39,6 +39,20 @@
           <div class="canvas-shell" id="canvasShell">
             <canvas id="sheetCanvas" width="960" height="540"></canvas>
           </div>
+
+          <div class="sheet-tools">
+            <div class="free-size-controls">
+              <label class="toggle-row"><input id="lockFreeFrameSize" type="checkbox" /> 固定尺寸</label>
+              <label>
+                <span>宽</span>
+                <input id="freeFrameWidth" type="number" min="1" step="1" value="64" />
+              </label>
+              <label>
+                <span>高</span>
+                <input id="freeFrameHeight" type="number" min="1" step="1" value="64" />
+              </label>
+            </div>
+          </div>
         </section>
 
         <aside class="inspector" aria-label="动画参数">
@@ -95,7 +109,10 @@
                     <span class="panel-kicker">Grid</span>
                     <h2>切片网格</h2>
                   </div>
-                  <button id="autoGridBtn" type="button" class="ghost" data-requires-image>自动</button>
+                  <div class="inline-actions">
+                    <button id="fitGridBtn" type="button" class="ghost" data-requires-image>均分</button>
+                    <button id="autoGridBtn" type="button" class="ghost" data-requires-image>自动</button>
+                  </div>
                 </div>
 
                 <div class="control-grid two" id="gridControls">
