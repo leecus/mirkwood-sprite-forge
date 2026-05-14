@@ -505,14 +505,16 @@ label {
 
 .control-grid label,
 .range-control,
-.file-name-control {
+.file-name-control,
+.compression-panel label {
   display: grid;
   gap: 6px;
 }
 
 .control-grid span,
 .range-control span,
-.file-name-control span {
+.file-name-control span,
+.compression-panel span {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -522,6 +524,7 @@ label {
 
 input[type="number"],
 input[type="text"],
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -531,13 +534,15 @@ textarea {
 }
 
 input[type="number"],
-input[type="text"] {
+input[type="text"],
+select {
   min-height: 38px;
   padding: 0 10px;
 }
 
 input[type="number"]:focus,
 input[type="text"]:focus,
+select:focus,
 textarea:focus {
   outline: 2px solid rgba(11, 157, 143, 0.24);
   border-color: var(--accent);
@@ -588,6 +593,62 @@ input[type="range"] {
 
 .export-actions button {
   padding: 0 10px;
+}
+
+.compression-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(120px, 0.65fr);
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(255, 254, 247, 0.58);
+}
+
+.compression-panel .range-control {
+  margin-top: 0;
+}
+
+.gif-compress-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.gif-compress-panel h2 {
+  margin: 1px 0 0;
+  font-size: 1rem;
+}
+
+.compressed-preview-stage {
+  display: grid;
+  min-height: 130px;
+  max-height: 230px;
+  overflow: auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, rgba(23, 25, 22, 0.09) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(23, 25, 22, 0.09) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(23, 25, 22, 0.09) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(23, 25, 22, 0.09) 75%),
+    #fffef7;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.compressed-preview-stage[hidden] {
+  display: none;
+}
+
+.compressed-preview-stage img {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
 }
 
 .modal-backdrop {
@@ -796,6 +857,10 @@ textarea {
   }
 
   .gif-preview-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .compression-panel {
     grid-template-columns: 1fr;
   }
 

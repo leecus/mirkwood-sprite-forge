@@ -302,7 +302,39 @@
 
         <div class="gif-preview-actions">
           <button id="regenerateGifBtn" type="button" class="ghost" data-requires-image>重新生成</button>
-          <button id="downloadGifBtn" type="button">下载 GIF</button>
+          <button id="downloadGifBtn" type="button">下载原始 GIF</button>
+        </div>
+
+        <div class="gif-compress-panel">
+          <div>
+            <span class="panel-kicker">Compress</span>
+            <h2>压缩副本</h2>
+          </div>
+
+          <div class="compression-panel">
+            <label class="range-control">
+              <span>GIF 尺寸 <b id="gifScaleValue">75%</b></span>
+              <input id="gifScale" type="range" min="25" max="100" step="5" value="75" />
+            </label>
+            <label>
+              <span>颜色数</span>
+              <select id="gifColors">
+                <option value="256">256 色</option>
+                <option value="128" selected>128 色</option>
+                <option value="64">64 色</option>
+                <option value="32">32 色</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="compressed-preview-stage" id="compressedGifPreviewStage" hidden>
+            <img id="compressedGifPreviewImage" alt="压缩 GIF 预览" />
+          </div>
+          <div class="gif-preview-meta" id="compressedGifMeta">先下载原始 GIF，需要小文件时再生成压缩副本</div>
+          <div class="gif-preview-actions">
+            <button id="generateCompressedGifBtn" type="button" class="ghost" data-requires-image disabled>生成压缩版</button>
+            <button id="downloadCompressedGifBtn" type="button" disabled>下载压缩版</button>
+          </div>
         </div>
       </section>
     </div>
