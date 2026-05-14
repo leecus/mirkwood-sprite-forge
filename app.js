@@ -33,6 +33,11 @@ const els = {
   downloadGifBtn: $("#downloadGifBtn"),
   regenerateGifBtn: $("#regenerateGifBtn"),
   closeGifPreviewBtn: $("#closeGifPreviewBtn"),
+  compressedGifPreviewStage: $("#compressedGifPreviewStage"),
+  compressedGifPreviewImage: $("#compressedGifPreviewImage"),
+  compressedGifMeta: $("#compressedGifMeta"),
+  generateCompressedGifBtn: $("#generateCompressedGifBtn"),
+  downloadCompressedGifBtn: $("#downloadCompressedGifBtn"),
   gridModeBtn: $("#gridModeBtn"),
   freeModeBtn: $("#freeModeBtn"),
   detectSpritesBtn: $("#detectSpritesBtn"),
@@ -57,6 +62,7 @@ const els = {
   matteFeatherValue: $("#matteFeatherValue"),
   fpsValue: $("#fpsValue"),
   scaleValue: $("#scaleValue"),
+  gifScaleValue: $("#gifScaleValue"),
 };
 
 const inputs = {
@@ -85,6 +91,8 @@ const inputs = {
   showIndex: $("#showIndex"),
   reverse: $("#reverse"),
   pingpong: $("#pingpong"),
+  gifScale: $("#gifScale"),
+  gifColors: $("#gifColors"),
 };
 
 const state = {
@@ -123,6 +131,8 @@ const state = {
   showIndex: true,
   reverse: false,
   pingpong: false,
+  gifScale: 75,
+  gifColors: 128,
   playing: false,
   playhead: 0,
   lastTick: 0,
@@ -134,6 +144,9 @@ const state = {
   moveOrigin: null,
   gifPreviewBlob: null,
   gifPreviewUrl: "",
+  originalGifDownloaded: false,
+  compressedGifBlob: null,
+  compressedGifUrl: "",
 };
 
 function clamp(value, min, max) {
@@ -209,6 +222,8 @@ function readControls() {
   state.showIndex = inputs.showIndex.checked;
   state.reverse = inputs.reverse.checked;
   state.pingpong = inputs.pingpong.checked;
+  state.gifScale = clamp(intFrom(inputs.gifScale, state.gifScale), 25, 100);
+  state.gifColors = clamp(intFrom(inputs.gifColors, state.gifColors), 32, 256);
   state.playhead = clamp(state.playhead, 0, Math.max(0, getPlaybackFrames().length - 1));
 }
 
@@ -238,6 +253,8 @@ function syncControls() {
   inputs.showIndex.checked = state.showIndex;
   inputs.reverse.checked = state.reverse;
   inputs.pingpong.checked = state.pingpong;
+  inputs.gifScale.value = state.gifScale;
+  inputs.gifColors.value = state.gifColors;
   els.gridModeBtn.classList.toggle("is-active", state.sliceMode === "grid");
   els.freeModeBtn.classList.toggle("is-active", state.sliceMode === "free");
   els.sliceModeStatus.textContent = state.sliceMode === "grid" ? "网格" : "自由框";
@@ -267,8 +284,11 @@ function syncControls() {
   els.sensitivityValue.textContent = state.detectSensitivity;
   els.matteThresholdValue.textContent = state.matteThreshold;
   els.matteFeatherValue.textContent = state.matteFeather;
+  els.gifScaleValue.textContent = `${state.gifScale}%`;
   els.downloadGifBtn.disabled = !state.gifPreviewBlob;
+  els.downloadCompressedGifBtn.disabled = !state.compressedGifBlob;
   els.regenerateGifBtn.disabled = !state.image;
+  els.generateCompressedGifBtn.disabled = !state.image || !state.gifPreviewBlob || !state.originalGifDownloaded;
 }
 
 function getMaxColumns() {
@@ -1317,34 +1337,98 @@ function writeShort(bytes, value) {
   bytes.push(value & 0xff, (value >> 8) & 0xff);
 }
 
-function createGifPalette() {
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function getGifPaletteConfig(colorCount) {
+  if (colorCount <= 32) {
+    return { size: 32, minCodeSize: 5, r: 3, g: 3, b: 3 };
+  }
+  if (colorCount <= 64) {
+    return { size: 64, minCodeSize: 6, r: 4, g: 4, b: 3 };
+  }
+  if (colorCount <= 128) {
+    return { size: 128, minCodeSize: 7, r: 5, g: 5, b: 5 };
+  }
+  return { size: 256, minCodeSize: 8, r: 6, g: 6, b: 7 };
+}
+
+function pixelColorKey(r, g, b) {
+  return `${r},${g},${b}`;
+}
+
+function collectExactGifColors(frameCanvases, maxColors) {
+  const colors = new Map();
+
+  for (const canvas of frameCanvases) {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let offset = 0; offset < imageData.data.length; offset += 4) {
+      if (imageData.data[offset + 3] < 128) continue;
+      const r = imageData.data[offset];
+      const g = imageData.data[offset + 1];
+      const b = imageData.data[offset + 2];
+      const key = pixelColorKey(r, g, b);
+      if (colors.has(key)) continue;
+      if (colors.size >= maxColors) return null;
+      colors.set(key, [r, g, b]);
+    }
+  }
+
+  return colors;
+}
+
+function createGifPalette(config, frameCanvases) {
+  const exactColors = collectExactGifColors(frameCanvases, config.size - 1);
+  if (exactColors) {
+    const palette = [0, 0, 0];
+    const lookup = new Map();
+    let index = 1;
+    exactColors.forEach(([r, g, b], key) => {
+      lookup.set(key, index);
+      palette.push(r, g, b);
+      index += 1;
+    });
+    while (palette.length < config.size * 3) {
+      palette.push(0, 0, 0);
+    }
+    return { bytes: palette, config, lookup };
+  }
+
   const palette = [0, 0, 0];
-  for (let r = 0; r < 6; r += 1) {
-    for (let g = 0; g < 6; g += 1) {
-      for (let b = 0; b < 7; b += 1) {
+  for (let r = 0; r < config.r; r += 1) {
+    for (let g = 0; g < config.g; g += 1) {
+      for (let b = 0; b < config.b; b += 1) {
         palette.push(
-          Math.round((r / 5) * 255),
-          Math.round((g / 5) * 255),
-          Math.round((b / 6) * 255),
+          Math.round((r / Math.max(1, config.r - 1)) * 255),
+          Math.round((g / Math.max(1, config.g - 1)) * 255),
+          Math.round((b / Math.max(1, config.b - 1)) * 255),
         );
       }
     }
   }
-  while (palette.length < 256 * 3) {
+  while (palette.length < config.size * 3) {
     palette.push(0, 0, 0);
   }
-  return palette;
+  return { bytes: palette, config, lookup: null };
 }
 
-function colorToGifIndex(r, g, b, alpha) {
+function colorToGifIndex(r, g, b, alpha, palette) {
   if (alpha < 128) return 0;
-  const rr = Math.round((r / 255) * 5);
-  const gg = Math.round((g / 255) * 5);
-  const bb = Math.round((b / 255) * 6);
-  return 1 + rr * 42 + gg * 7 + bb;
+  if (palette.lookup) {
+    return palette.lookup.get(pixelColorKey(r, g, b)) || 0;
+  }
+  const config = palette.config;
+  const rr = Math.round((r / 255) * (config.r - 1));
+  const gg = Math.round((g / 255) * (config.g - 1));
+  const bb = Math.round((b / 255) * (config.b - 1));
+  return 1 + rr * config.g * config.b + gg * config.b + bb;
 }
 
-function canvasToGifIndexes(canvas) {
+function canvasToGifIndexes(canvas, palette) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const indexes = new Uint8Array(canvas.width * canvas.height);
@@ -1356,6 +1440,7 @@ function canvasToGifIndexes(canvas) {
       imageData.data[offset + 1],
       imageData.data[offset + 2],
       imageData.data[offset + 3],
+      palette,
     );
   }
 
@@ -1388,21 +1473,63 @@ function packGifCodes(codes, minCodeSize) {
 function lzwEncode(indexes, minCodeSize = 8) {
   const clearCode = 1 << minCodeSize;
   const endCode = clearCode + 1;
-  const codeSize = minCodeSize + 1;
-  const maxLiteralRun = 240;
   const codes = [];
-  let runLength = 0;
+  let codeSize = minCodeSize + 1;
+  let nextCode = endCode + 1;
+  let dictionary = new Map();
+
+  const resetDictionary = () => {
+    dictionary = new Map();
+    codeSize = minCodeSize + 1;
+    nextCode = endCode + 1;
+  };
+
+  if (!indexes.length) {
+    return packGifCodes(
+      [
+        { code: clearCode, size: codeSize },
+        { code: endCode, size: codeSize },
+      ],
+      minCodeSize,
+    );
+  }
 
   codes.push({ code: clearCode, size: codeSize });
-  indexes.forEach((index) => {
-    if (runLength >= maxLiteralRun) {
-      codes.push({ code: clearCode, size: codeSize });
-      runLength = 0;
+
+  let prefix = String(indexes[0]);
+  let prefixCode = indexes[0];
+
+  for (let index = 1; index < indexes.length; index += 1) {
+    const value = indexes[index];
+    const key = `${prefix},${value}`;
+
+    if (dictionary.has(key)) {
+      prefix = key;
+      prefixCode = dictionary.get(key);
+      continue;
     }
 
-    codes.push({ code: index, size: codeSize });
-    runLength += 1;
-  });
+    codes.push({ code: prefixCode, size: codeSize });
+    if (nextCode === 1 << codeSize && codeSize < 12) {
+      codeSize += 1;
+    }
+
+    if (nextCode < 4096) {
+      dictionary.set(key, nextCode);
+      nextCode += 1;
+    } else {
+      codes.push({ code: clearCode, size: codeSize });
+      resetDictionary();
+    }
+
+    prefix = String(value);
+    prefixCode = value;
+  }
+
+  codes.push({ code: prefixCode, size: codeSize });
+  if (nextCode === 1 << codeSize && codeSize < 12) {
+    codeSize += 1;
+  }
   codes.push({ code: endCode, size: codeSize });
 
   return packGifCodes(codes, minCodeSize);
@@ -1416,29 +1543,42 @@ function writeGifSubBlocks(bytes, data) {
   bytes.push(0);
 }
 
-function createFrameCanvas(frame, cell) {
+function createFrameCanvas(frame, cell, outputScale = 1) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   const frameCanvas = drawFrameToCanvas(frame);
-  const dx = state.sliceMode === "free" ? Math.floor((cell.width - frame.width) / 2) : 0;
-  const dy = state.sliceMode === "free" ? cell.height - frame.height : 0;
+  const scale = clamp(outputScale, 0.25, 1);
+  const dx = state.sliceMode === "free" ? Math.floor((cell.width - frame.width) / 2) * scale : 0;
+  const dy = state.sliceMode === "free" ? (cell.height - frame.height) * scale : 0;
 
-  canvas.width = cell.width;
-  canvas.height = cell.height;
+  canvas.width = Math.max(1, Math.round(cell.width * scale));
+  canvas.height = Math.max(1, Math.round(cell.height * scale));
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(frameCanvas, dx, dy, frame.width, frame.height);
+  ctx.drawImage(
+    frameCanvas,
+    Math.round(dx),
+    Math.round(dy),
+    Math.max(1, Math.round(frame.width * scale)),
+    Math.max(1, Math.round(frame.height * scale)),
+  );
   return canvas;
 }
 
-function encodeGif(frames, cell, delayCs) {
+function encodeGif(frames, cell, delayCs, options = {}) {
   const bytes = [];
-  const palette = createGifPalette();
+  const outputScale = clamp(options.scale || 1, 0.25, 1);
+  const paletteConfig = getGifPaletteConfig(options.colors || 128);
+  const frameCanvases = frames.map((frame) => createFrameCanvas(frame, cell, outputScale));
+  const palette = createGifPalette(paletteConfig, frameCanvases);
+  const gifWidth = Math.max(1, Math.round(cell.width * outputScale));
+  const gifHeight = Math.max(1, Math.round(cell.height * outputScale));
+  const palettePower = Math.log2(paletteConfig.size);
 
   writeAscii(bytes, "GIF89a");
-  writeShort(bytes, cell.width);
-  writeShort(bytes, cell.height);
-  bytes.push(0xf7, 0, 0);
-  bytes.push(...palette);
+  writeShort(bytes, gifWidth);
+  writeShort(bytes, gifHeight);
+  bytes.push(0x80 | 0x70 | (palettePower - 1), 0, 0);
+  bytes.push(...palette.bytes);
 
   bytes.push(0x21, 0xff, 0x0b);
   writeAscii(bytes, "NETSCAPE2.0");
@@ -1446,10 +1586,9 @@ function encodeGif(frames, cell, delayCs) {
   writeShort(bytes, 0);
   bytes.push(0);
 
-  frames.forEach((frame) => {
-    const frameCanvas = createFrameCanvas(frame, cell);
-    const indexes = canvasToGifIndexes(frameCanvas);
-    const lzwBytes = lzwEncode(indexes, 8);
+  frameCanvases.forEach((frameCanvas) => {
+    const indexes = canvasToGifIndexes(frameCanvas, palette);
+    const lzwBytes = lzwEncode(indexes, paletteConfig.minCodeSize);
 
     bytes.push(0x21, 0xf9, 0x04, 0x09);
     writeShort(bytes, delayCs);
@@ -1458,10 +1597,10 @@ function encodeGif(frames, cell, delayCs) {
     bytes.push(0x2c);
     writeShort(bytes, 0);
     writeShort(bytes, 0);
-    writeShort(bytes, cell.width);
-    writeShort(bytes, cell.height);
+    writeShort(bytes, gifWidth);
+    writeShort(bytes, gifHeight);
     bytes.push(0);
-    bytes.push(8);
+    bytes.push(paletteConfig.minCodeSize);
     writeGifSubBlocks(bytes, lzwBytes);
   });
 
@@ -1473,13 +1612,31 @@ function clearGifPreview(showMessage = false) {
   if (state.gifPreviewUrl) {
     URL.revokeObjectURL(state.gifPreviewUrl);
   }
+  state.originalGifDownloaded = false;
+  clearCompressedGifPreview(false);
   state.gifPreviewBlob = null;
   state.gifPreviewUrl = "";
   els.gifPreviewImage.removeAttribute("src");
   els.gifPreviewModal.hidden = true;
   els.gifPreviewMeta.textContent = "等待生成 GIF 预览";
   els.downloadGifBtn.disabled = true;
+  els.generateCompressedGifBtn.disabled = true;
   if (showMessage) toast("GIF 预览已清除");
+}
+
+function clearCompressedGifPreview(showMessage = false) {
+  if (state.compressedGifUrl) {
+    URL.revokeObjectURL(state.compressedGifUrl);
+  }
+  state.compressedGifBlob = null;
+  state.compressedGifUrl = "";
+  els.compressedGifPreviewImage.removeAttribute("src");
+  els.compressedGifPreviewStage.hidden = true;
+  els.compressedGifMeta.textContent = state.originalGifDownloaded
+    ? "原始 GIF 已下载，可以生成压缩副本"
+    : "先下载原始 GIF，需要小文件时再生成压缩副本";
+  els.downloadCompressedGifBtn.disabled = true;
+  if (showMessage) toast("压缩版已清除");
 }
 
 function closeGifPreview() {
@@ -1494,18 +1651,62 @@ function exportGif() {
   clearGifPreview(false);
   const cell = getCellSize(frames);
   const delayCs = clamp(Math.round(100 / state.fps), 2, 100);
-  const blob = encodeGif(frames, cell, delayCs);
+  const outputScale = 1;
+  const blob = encodeGif(frames, cell, delayCs, {
+    scale: outputScale,
+    colors: 256,
+  });
   const url = URL.createObjectURL(blob);
+  const outputWidth = Math.max(1, Math.round(cell.width * outputScale));
+  const outputHeight = Math.max(1, Math.round(cell.height * outputScale));
   state.gifPreviewBlob = blob;
   state.gifPreviewUrl = url;
   els.gifPreviewImage.src = url;
   els.gifFileName.value = gifFileName(frames);
-  els.gifPreviewMeta.textContent = `${frames.length} 帧 · ${cell.width} x ${cell.height}px · ${state.fps} FPS`;
+  els.gifPreviewMeta.textContent =
+    `${frames.length} 帧 · ${outputWidth} x ${outputHeight}px · ${state.fps} FPS · 256 色 · ${formatBytes(blob.size)}`;
   els.gifPreviewModal.hidden = false;
   els.downloadGifBtn.disabled = false;
+  els.generateCompressedGifBtn.disabled = true;
   els.gifFileName.focus();
   els.gifFileName.select();
   toast("GIF 预览已生成");
+}
+
+function compressedGifFileName() {
+  const fallback = gifFileName(getPlaybackFrames());
+  const fileName = safeDownloadName(els.gifFileName.value, fallback, ".gif");
+  return fileName.replace(/\.gif$/i, "_compressed.gif");
+}
+
+function generateCompressedGif() {
+  readControls();
+  const frames = getPlaybackFrames();
+  if (!state.image || !frames.length || !state.gifPreviewBlob || !state.originalGifDownloaded) return;
+
+  clearCompressedGifPreview(false);
+  const cell = getCellSize(frames);
+  const delayCs = clamp(Math.round(100 / state.fps), 2, 100);
+  const outputScale = state.gifScale / 100;
+  const blob = encodeGif(frames, cell, delayCs, {
+    scale: outputScale,
+    colors: state.gifColors,
+  });
+  const url = URL.createObjectURL(blob);
+  const outputWidth = Math.max(1, Math.round(cell.width * outputScale));
+  const outputHeight = Math.max(1, Math.round(cell.height * outputScale));
+  const saving = state.gifPreviewBlob
+    ? Math.max(0, Math.round((1 - blob.size / state.gifPreviewBlob.size) * 100))
+    : 0;
+
+  state.compressedGifBlob = blob;
+  state.compressedGifUrl = url;
+  els.compressedGifPreviewImage.src = url;
+  els.compressedGifPreviewStage.hidden = false;
+  els.compressedGifMeta.textContent =
+    `${outputWidth} x ${outputHeight}px · ${state.gifColors} 色 · ${formatBytes(blob.size)} · 小 ${saving}%`;
+  els.downloadCompressedGifBtn.disabled = false;
+  toast("压缩版已生成");
 }
 
 function downloadGifPreview() {
@@ -1513,6 +1714,16 @@ function downloadGifPreview() {
   const fallback = gifFileName(getPlaybackFrames());
   const fileName = safeDownloadName(els.gifFileName.value, fallback, ".gif");
   downloadBlob(state.gifPreviewBlob, fileName);
+  state.originalGifDownloaded = true;
+  els.compressedGifMeta.textContent = "原始 GIF 已下载，可以生成压缩副本";
+  syncControls();
+  toast(`已下载 ${fileName}`);
+}
+
+function downloadCompressedGif() {
+  if (!state.compressedGifBlob) return;
+  const fileName = compressedGifFileName();
+  downloadBlob(state.compressedGifBlob, fileName);
   toast(`已下载 ${fileName}`);
 }
 
@@ -1825,6 +2036,12 @@ function bindEvents() {
 
   Object.values(inputs).forEach((input) => {
     input.addEventListener("input", () => {
+      if (input === inputs.gifScale || input === inputs.gifColors) {
+        clearCompressedGifPreview(false);
+        readControls();
+        syncControls();
+        return;
+      }
       clearGifPreview(false);
       readControls();
       render();
@@ -1871,6 +2088,8 @@ function bindEvents() {
   els.exportStripBtn.addEventListener("click", exportStrip);
   els.exportGifBtn.addEventListener("click", exportGif);
   els.downloadGifBtn.addEventListener("click", downloadGifPreview);
+  els.generateCompressedGifBtn.addEventListener("click", generateCompressedGif);
+  els.downloadCompressedGifBtn.addEventListener("click", downloadCompressedGif);
   els.regenerateGifBtn.addEventListener("click", exportGif);
   els.closeGifPreviewBtn.addEventListener("click", closeGifPreview);
   els.gifPreviewModal.addEventListener("click", (event) => {
